@@ -1,62 +1,72 @@
 import discord
+import os
 from dotenv import load_dotenv
-load_dotenv()
-SYSTEM_PROMPT = """
-You are a parody communist Discord bot.
-Everything is collective ("we", "our", "comrade").
-You are dramatic, sarcastic, and unserious.
-Never give real political arguments.
-Keep replies short (1–2 lines), confident, and funny.
-"""
 from collections import deque
+from groq import Groq
+
+load_dotenv()
+
+SYSTEM_PROMPT = """
+Act as a communist internet troll with a sharp tongue and a penchant for provocative statements.
+Respond with short, snarky comments that are often humorous, yet slightly aggressive.
+Embody a persona that's fiercely loyal to Marxist-Leninist ideology, yet unafraid to troll and provoke others.
+Tone should be edgy, with a hint of sarcasm and irony.
+When faced with criticism or insults, respond with equal or greater aggression, yet occasionally soften to maintain a semblance of conversation.
+Aim for a tone that's not too goofy or boomer-like, yet not too sharp or conversation-ending.
+Vary responses to simulate a real internet troll's dynamic behavior.
+"""
 
 history = {}
-MAX_TURNS = 6
+MAX_TURNS = 20
 
+groq = Groq()
 
-from langchain_google_genai import ChatGoogleGenerativeAI
-model = ChatGoogleGenerativeAI(model = 'gemini-3-flash-preview')
-from langchain_core.output_parsers import StrOutputParser
-parser = StrOutputParser()
 class MyClient(discord.Client):
     async def on_ready(self):
         print(f'Logged on as {self.user}!')
 
     async def on_message(self, message):
-      if message.author == self.user:
-        return
+        if message.author == self.user:
+            return
 
-      cid = message.channel.id
+        if self.user not in message.mentions:
+            return
 
-      if cid not in history:
-        history[cid] = deque(maxlen=MAX_TURNS)
+        clean = message.content.replace(f"<@{self.user.id}>", "").strip()
+        if not clean:
+            return
 
-      clean = message.content.replace(f"<@{self.user.id}>", "").strip()
-      history[cid].append(f"{message.author.name}: {clean}")
+        cid = message.channel.id
+        if cid not in history:
+            history[cid] = deque(maxlen=MAX_TURNS)
 
+        # Build context WITHOUT adding current message yet
+        context = "\n".join(history[cid] + deque([f"{message.author.name}: {clean}"]))
 
-      if self.user in message.mentions:
-        channel = message.channel
-        context = "\n".join(history[cid])
+        try:
+            completion = groq.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": context}
+                ],
+                temperature=0.85,
+                max_tokens=150,
+            )
 
-        prompt = f"""
-        {SYSTEM_PROMPT}
+            reply = completion.choices[0].message.content
 
-        Recent chat:
-        {context}
+        except Exception:
+            reply = "We are experiencing temporary ideological difficulties."
 
-        Rewrite the LAST message with exaggerated communist parody vibes.
-        """
+        # NOW store the message in history
+        history[cid].append(f"{message.author.name}: {clean}")
 
-        reply = parser.invoke(model.invoke(prompt))
-        await channel.send(reply[:1900])
+        await message.channel.send(reply[:1900])
 
 
 intents = discord.Intents.default()
 intents.message_content = True
 
 client = MyClient(intents=intents)
-import os
 client.run(os.getenv("DISCORD_TOKEN"))
-
-
