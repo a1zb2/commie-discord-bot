@@ -40,16 +40,21 @@ class MyClient(discord.Client):
         if cid not in history:
             history[cid] = deque(maxlen=MAX_TURNS)
 
-        # Build context WITHOUT adding current message yet
-        context = "\n".join(history[cid] + deque([f"{message.author.name}: {clean}"]))
+        # store ONLY message text (no usernames)
+        history[cid].append(clean)
+
+        # build messages properly
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+        ]
+
+        for msg in history[cid]:
+            messages.append({"role": "user", "content": msg})
 
         try:
             completion = groq.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": context}
-                ],
+                messages=messages,
                 temperature=0.85,
                 max_tokens=150,
             )
@@ -58,9 +63,6 @@ class MyClient(discord.Client):
 
         except Exception:
             reply = "We are experiencing temporary ideological difficulties."
-
-        # NOW store the message in history
-        history[cid].append(f"{message.author.name}: {clean}")
 
         await message.channel.send(reply[:1900])
 
